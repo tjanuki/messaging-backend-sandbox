@@ -52,16 +52,47 @@ class User extends Authenticatable
         ];
     }
 
+    /**
+     * Relationships
+     */
+    public function conversations()
+    {
+        return $this->belongsToMany(Conversation::class, 'conversation_participants')
+                   ->withPivot('joined_at', 'last_read_at', 'is_admin')
+                   ->withTimestamps();
+    }
+
+    public function messages()
+    {
+        return $this->hasMany(Message::class);
+    }
+
+    public function reactions()
+    {
+        return $this->hasMany(MessageReaction::class);
+    }
+
+    public function typingIndicators()
+    {
+        return $this->hasMany(TypingIndicator::class);
+    }
+
+    /**
+     * Scopes
+     */
+    public function scopeOnline($query)
+    {
+        return $query->where('is_online', true);
+    }
+
+    /**
+     * Methods
+     */
     public function updateOnlineStatus(bool $isOnline)
     {
         $this->update([
             'is_online' => $isOnline,
             'last_seen' => now()
         ]);
-    }
-
-    public function scopeOnline($query)
-    {
-        return $query->where('is_online', true);
     }
 }
