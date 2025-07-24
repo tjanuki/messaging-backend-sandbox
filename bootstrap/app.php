@@ -14,6 +14,16 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->statefulApi();
+        
+        // Add custom middleware
+        $middleware->alias([
+            'update.user.status' => \App\Http\Middleware\UpdateUserOnlineStatus::class,
+        ]);
+        
+        // Apply online status middleware to API routes with authentication
+        $middleware->group('api', [
+            'update.user.status',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

@@ -6,12 +6,20 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\MessageReaction;
+use App\Services\MessageService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 
 class MessageController extends Controller
 {
+    protected MessageService $messageService;
+
+    public function __construct(MessageService $messageService)
+    {
+        $this->messageService = $messageService;
+    }
+
     /**
      * Get messages for a conversation
      */
@@ -34,10 +42,7 @@ class MessageController extends Controller
         $limit = $request->get('limit', 50);
         $page = $request->get('page', 1);
 
-        $messages = $conversation->messages()
-            ->with(['user', 'reactions.user'])
-            ->orderBy('created_at', 'desc')
-            ->paginate($limit, ['*'], 'page', $page);
+        $messages = $this->messageService->getMessages($conversation->id, $page, $limit);
 
         return response()->json([
             'messages' => $messages->items(),
@@ -70,21 +75,11 @@ class MessageController extends Controller
             ], 422);
         }
 
-        $message = Message::create([
-            'conversation_id' => $conversation->id,
-            'user_id' => $request->user()->id,
-            'content' => $request->content,
-            'type' => $request->get('type', 'text'),
-            'metadata' => $request->get('metadata'),
-        ]);
-
-        // Update conversation's last message
-        $conversation->update([
-            'last_message_id' => $message->id,
-            'last_message_at' => $message->created_at,
-        ]);
-
-        $message->load(['user', 'reactions.user']);
+        $message = $this->messageService->createMessage(
+            $conversation->id,
+            $request->user()->id,
+            $request->validated()
+        );
 
         return response()->json([
             'message' => $message
@@ -109,15 +104,13 @@ class MessageController extends Controller
             ], 422);
         }
 
-        $message->update([
-            'content' => $request->content,
-            'edited_at' => now(),
-        ]);
-
-        $message->load(['user', 'reactions.user']);
+        $updatedMessage = $this->messageService->updateMessage(
+            $message->id,
+            $request->validated()
+        );
 
         return response()->json([
-            'message' => $message
+            'message' => $updatedMessage
         ]);
     }
 
@@ -128,7 +121,7 @@ class MessageController extends Controller
     {
         $this->authorize('delete', $message);
 
-        $message->delete();
+        $this->messageService->deleteMessage($message->id);
 
         return response()->json([
             'message' => 'Message deleted successfully'
@@ -153,18 +146,11 @@ class MessageController extends Controller
             ], 422);
         }
 
-        $reaction = MessageReaction::updateOrCreate(
-            [
-                'message_id' => $message->id,
-                'user_id' => $request->user()->id,
-                'emoji' => $request->emoji,
-            ],
-            [
-                'created_at' => now(),
-            ]
+        $reaction = $this->messageService->addReaction(
+            $message->id,
+            $request->user()->id,
+            $request->emoji
         );
-
-        $reaction->load('user');
 
         return response()->json([
             'reaction' => $reaction
@@ -189,19 +175,11 @@ class MessageController extends Controller
             ], 422);
         }
 
-        $reaction = MessageReaction::where([
-            'message_id' => $message->id,
-            'user_id' => $request->user()->id,
-            'emoji' => $request->emoji,
-        ])->first();
-
-        if (!$reaction) {
-            return response()->json([
-                'message' => 'Reaction not found'
-            ], 404);
-        }
-
-        $reaction->delete();
+        $this->messageService->removeReaction(
+            $message->id,
+            $request->user()->id,
+            $request->emoji
+        );
 
         return response()->json([
             'message' => 'Reaction removed successfully'
@@ -215,9 +193,7 @@ class MessageController extends Controller
     {
         $this->authorize('participate', $conversation);
 
-        $conversation->participants()
-            ->where('user_id', $request->user()->id)
-            ->update(['last_read_at' => now()]);
+        $this->messageService->markAsRead($conversation->id, $request->user()->id);
 
         return response()->json([
             'message' => 'Messages marked as read'

@@ -5,12 +5,25 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\TypingIndicator;
+use App\Services\UserStatusService;
+use App\Services\TypingService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 
 class StatusController extends Controller
 {
+    protected UserStatusService $userStatusService;
+    protected TypingService $typingService;
+
+    public function __construct(
+        UserStatusService $userStatusService,
+        TypingService $typingService
+    ) {
+        $this->userStatusService = $userStatusService;
+        $this->typingService = $typingService;
+    }
+
     /**
      * Update typing status
      */
@@ -29,32 +42,15 @@ class StatusController extends Controller
             ], 422);
         }
 
-        $user = $request->user();
-        $isTyping = $request->is_typing;
-
-        if ($isTyping) {
-            // Create or update typing indicator with expiration
-            TypingIndicator::updateOrCreate(
-                [
-                    'conversation_id' => $conversation->id,
-                    'user_id' => $user->id,
-                ],
-                [
-                    'is_typing' => true,
-                    'expires_at' => now()->addSeconds(10), // Expire after 10 seconds
-                ]
-            );
+        if ($request->is_typing) {
+            $this->typingService->startTyping($request->user()->id, $conversation->id);
         } else {
-            // Remove typing indicator
-            TypingIndicator::where([
-                'conversation_id' => $conversation->id,
-                'user_id' => $user->id,
-            ])->delete();
+            $this->typingService->stopTyping($request->user()->id, $conversation->id);
         }
 
         return response()->json([
             'message' => 'Typing status updated',
-            'is_typing' => $isTyping
+            'is_typing' => $request->is_typing
         ]);
     }
 
@@ -65,19 +61,15 @@ class StatusController extends Controller
     {
         $this->authorize('participate', $conversation);
 
-        // Clean up expired typing indicators
-        TypingIndicator::where('expires_at', '<', now())->delete();
-
-        $typingUsers = TypingIndicator::where('conversation_id', $conversation->id)
-            ->where('user_id', '!=', $request->user()->id) // Exclude current user
-            ->where('is_typing', true)
-            ->where('expires_at', '>', now())
-            ->with('user')
-            ->get()
-            ->pluck('user');
+        $typingUsers = $this->typingService->getTypingUsers($conversation->id);
+        
+        // Filter out current user
+        $typingUsers = array_filter($typingUsers, function ($user) use ($request) {
+            return $user['id'] !== $request->user()->id;
+        });
 
         return response()->json([
-            'typing_users' => $typingUsers
+            'typing_users' => array_values($typingUsers)
         ]);
     }
 
@@ -97,13 +89,16 @@ class StatusController extends Controller
             ], 422);
         }
 
-        $user = $request->user();
-        $user->updateOnlineStatus($request->is_online);
+        if ($request->is_online) {
+            $this->userStatusService->setUserOnline($request->user()->id);
+        } else {
+            $this->userStatusService->setUserOffline($request->user()->id);
+        }
 
         return response()->json([
             'message' => 'Online status updated',
             'is_online' => $request->is_online,
-            'last_seen' => $user->last_seen
+            'last_seen' => $request->user()->fresh()->last_seen
         ]);
     }
 
@@ -112,13 +107,28 @@ class StatusController extends Controller
      */
     public function getOnlineUsers(Request $request): JsonResponse
     {
-        $onlineUsers = \App\Models\User::online()
-            ->where('id', '!=', $request->user()->id)
-            ->select(['id', 'name', 'email', 'avatar', 'is_online', 'last_seen'])
-            ->get();
+        $onlineUsers = $this->userStatusService->getOnlineUsers();
+        
+        // Filter out current user
+        $onlineUsers = array_filter($onlineUsers, function ($user) use ($request) {
+            return $user['id'] !== $request->user()->id;
+        });
 
         return response()->json([
-            'online_users' => $onlineUsers
+            'online_users' => array_values($onlineUsers)
+        ]);
+    }
+
+    /**
+     * Heartbeat to keep user online
+     */
+    public function heartbeat(Request $request): JsonResponse
+    {
+        $this->userStatusService->heartbeat($request->user()->id);
+
+        return response()->json([
+            'message' => 'Heartbeat received',
+            'timestamp' => now()->toISOString()
         ]);
     }
 }

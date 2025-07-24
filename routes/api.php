@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\StatusController;
+use App\Http\Controllers\Api\TypingController;
 
 // Authentication routes (public)
 Route::middleware(['throttle:auth'])->group(function () {
@@ -38,9 +39,18 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::delete('/messages/{message}/reactions', [MessageController::class, 'removeReaction']);
     Route::post('/conversations/{conversation}/read', [MessageController::class, 'markAsRead']);
 
-    // Typing and Status
-    Route::post('/conversations/{conversation}/typing', [StatusController::class, 'updateTypingStatus']);
-    Route::get('/conversations/{conversation}/typing', [StatusController::class, 'getTypingUsers']);
+    // Typing indicators
+    Route::post('/conversations/{conversation}/typing/start', [TypingController::class, 'startTyping']);
+    Route::post('/conversations/{conversation}/typing/stop', [TypingController::class, 'stopTyping']);
+    Route::post('/conversations/{conversation}/typing', [TypingController::class, 'toggleTyping']);
+    Route::get('/conversations/{conversation}/typing', [TypingController::class, 'getTypingUsers']);
+    Route::post('/conversations/{conversation}/typing/heartbeat', [TypingController::class, 'heartbeat']);
+
+    // Legacy typing endpoint for backward compatibility
+    Route::post('/conversations/{conversation}/typing-status', [StatusController::class, 'updateTypingStatus']);
+
+    // User status and presence
     Route::post('/user/status', [StatusController::class, 'updateOnlineStatus']);
     Route::get('/users/online', [StatusController::class, 'getOnlineUsers']);
+    Route::post('/user/heartbeat', [StatusController::class, 'heartbeat']);
 });
