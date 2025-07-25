@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\StatusController;
 use App\Http\Controllers\Api\TypingController;
+use App\Http\Controllers\Api\NotificationController;
 
 // Authentication routes (public)
 Route::middleware(['throttle:auth'])->group(function () {
@@ -53,4 +54,13 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('/user/status', [StatusController::class, 'updateOnlineStatus']);
     Route::get('/users/online', [StatusController::class, 'getOnlineUsers']);
     Route::post('/user/heartbeat', [StatusController::class, 'heartbeat']);
+
+    // Push notifications
+    Route::post('/notifications/subscribe', [NotificationController::class, 'subscribeToTopic']);
+    Route::post('/notifications/unsubscribe', [NotificationController::class, 'unsubscribeFromTopic']);
+    Route::post('/notifications/test', [NotificationController::class, 'sendTestNotification']);
+    Route::post('/notifications/topic', [NotificationController::class, 'sendTopicNotification']);
+    Route::get('/notifications/preferences', [NotificationController::class, 'getNotificationPreferences']);
+    Route::put('/notifications/preferences', [NotificationController::class, 'updateNotificationPreferences']);
+    Route::post('/notifications/validate-token', [NotificationController::class, 'validateToken']);
 });
